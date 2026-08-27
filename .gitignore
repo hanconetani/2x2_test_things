@@ -1,0 +1,5 @@
+myenv/
+myenv.tar.gz
+mypipeline.tar.gz
+__pycache__/
+*.pyc
