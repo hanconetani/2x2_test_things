@@ -1,3 +1,6 @@
+# Generated via: source myenv/bin/activate && pip freeze > requirements.txt
+# To rebuild: pip install -r requirements.txt --break-system-packages
+#             (then venv-pack -o myenv.tar.gz --force)
 awkward==2.8.12
 awkward_cpp==51
 contourpy==1.3.0
