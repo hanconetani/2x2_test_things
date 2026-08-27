@@ -58,6 +58,20 @@ def pedestal(array):
 
     return pedestal_region
 
+def pedestal_batch(traces):
+    """Vectorized pedestal(): traces shape (n, 600) -> quietest 50-sample segment per row, shape (n, 50)."""
+    indices = np.arange(0, 13) * 50
+    start_indices = indices[:-1]
+    segment_range = np.arange(50)
+    index_array = start_indices[:, None] + segment_range        # (12, 50)
+
+    sliced = traces[:, index_array]                              # (n, 12, 50)
+    ranges = np.ptp(sliced, axis=-1)                              # (n, 12)
+    smallest_region = np.argmin(ranges, axis=-1) * 50              # (n,)
+
+    seg_idx = smallest_region[:, None] + np.arange(50)[None, :]   # (n, 50)
+    return np.take_along_axis(traces, seg_idx, axis=1)
+
 def kill_weirdos(array):
     #good_mask = (array[:,:,:,-1] > (array[:,:,:,0] - 120))
     absolute_mean = np.mean(np.abs(array[:,:,:,:] - (np.mean(array[:,:,:,:50],axis=-1))[:, :, :, np.newaxis]), axis=-1)
@@ -141,13 +155,11 @@ def tag_dark_counts(FileList, ADCnum,Channelnum, MaxPulsenum, Voltage, Run, Wind
                          #offbeam_mask = np.where(light_wvfms_rwm < 1e4)[0]
                          #offbeam_wvfm_v1 =  light_wvfms[offbeam_mask, :, :, :]
                          offbeam_wvfm_v1 =  h5['light/wvfm/data']['samples']
-                         offbeam_wvfm_v1 =  h5['light/wvfm/data']['samples']
                          print(f"[MEM] after reading raw 'samples' field: {_rss_gb():.2f} GB | shape {offbeam_wvfm_v1.shape} dtype {offbeam_wvfm_v1.dtype}", flush=True)
                          #print('a')
                          #del light_wvfms_rwm
                          #del light_wvfms
                          #del offbeam_mask
-                         offbeam_wvfm_v2 =  thd_correct(offbeam_wvfm_v1)
                          offbeam_wvfm_v2 =  thd_correct(offbeam_wvfm_v1)
                          print(f"[MEM] after thd_correct: {_rss_gb():.2f} GB", flush=True)
                          #print('b')
@@ -156,7 +168,6 @@ def tag_dark_counts(FileList, ADCnum,Channelnum, MaxPulsenum, Voltage, Run, Wind
                          #print('c')
                          #del offbeam_wvfm_v2
                          #del offbeam_wvfm_v1
-                         offbeam_wvfm_v4 =  offbeam_wvfm_v2[:, :, sipm_channels, :] #* gain_array[:, :, np.newaxis]
                          offbeam_wvfm_v4 =  offbeam_wvfm_v2[:, :, sipm_channels, :] #* gain_array[:, :, np.newaxis]
                          print(f"[MEM] after slicing to sipm_channels: {_rss_gb():.2f} GB | shape {offbeam_wvfm_v4.shape}", flush=True)
                          #offbeam_wvfm_v4 =  offbeam_wvfm_v3[:, :, sipm_channels, :] #* gain_array[:, :, np.newaxis]
@@ -176,94 +187,82 @@ def tag_dark_counts(FileList, ADCnum,Channelnum, MaxPulsenum, Voltage, Run, Wind
                          #per_event_hits = np.sum(np.sum(np.sum(first_bins, axis=-1), axis=-1), axis=-1)
                          #print(np.sum(per_event_hits > 0))
 
-                         for adc in range(8):#[ADCnum]:#8): Editted 7/28/2026
-                              for channel in range(Channelnum):#Editted here 7/28/2026
-                                   adc_channel = sipm_channels[channel]
-                                   tester=0
-                                   for event in range(np.shape(offbeam_wvfm_v4)[0]):
-                                        hit_idx = np.where(first_bins[event, adc, channel]==1)[0]
-                                        if len(hit_idx) > 0:
-                                             for j in range(len(hit_idx)):
-                                                  cut_1 = (count[adc, adc_channel] < MaxPulsenum)
-                                                  #cut_2 = (hit_idx[0] >=3 )
-                                                  hit_value = hit_idx[j] + 20
-                                                  last_tick = np.shape(offbeam_wvfm_v4)[-1] - (Window - 2)
-                                                  cut_3 = (hit_value <= last_tick)
-                                                  #combo_cut = cut_2*cut_3*cut_1
-                                                  combo_cut = cut_3*cut_1
-                                                  if combo_cut==1:
+     last_tick = offbeam_wvfm_v4.shape[-1] - (Window - 2)
 
-                                                       dark_count_form = offbeam_wvfm_v4[event, adc, channel, hit_value-3:hit_value+(Window-3)]
-                                                       #dark_count_int = (dark_count_form / gain_array[adc, channel]).astype(np.int16)
-                                                       # June 2025, used: 
-                                                       #cut_4 = (dark_count_form[-1] < 90)
-                                                       #cut_5 = (np.min(dark_count_form) > -90)
-                                                       if adc >=2:
-                                                            #cut_4 = (np.abs(dark_count_form[-1]) < 400)
-                                                            #cut_5 = (dark_count_form[0] < 450)
-                                                            #cut_6 = (np.min(dark_count_form[3:13]) > -500)
-                                                            #cut_4 = (np.abs(dark_count_form[-1]) < 250)
-                                                            cut_4 = (np.max(dark_count_form[-6:]) < 80)
-                                                            cut_5 = (dark_count_form[0] < 80)
-                                                            cut_6 = (np.min(dark_count_form) > -80)
-                                                            #cut_7 = (np.max(dark_count_form) <=  np.max(dark_count_form[3:6]))
-                                                            sequence = (dark_count_form[2] > dark_count_form[3]) + (dark_count_form[3] > dark_count_form[4]) + (dark_count_form[4] > dark_count_form[5]) + (dark_count_form[5] > dark_count_form[6])
-                                                            cut_7 = (np.sum(sequence) < 2)
-                                                            #difrl = np.diff(dark_count_form[2:7])
-                                                            #cut_7 = (np.sum(np.diff(np.sign(difrl)) != 0) < 2)
-                                                            cut_8 = np.prod(dark_count_form[3:5] > n_noise_factor[adc])
-                                                            cut_9 = (np.sum(dark_count_form) < 2.5e4) and (np.sum(dark_count_form) > -1.5e3)
-                                                       else: 
-                                                            cut_4 = (np.max(dark_count_form[-6:]) < 100)
-                                                            cut_5 = (dark_count_form[0] < 100)
-                                                            cut_6 = (np.min(dark_count_form) > -100)
-                                                            #cut_7 = (np.max(dark_count_form) <=  np.max(dark_count_form[3:6]))
-                                                            #difrl = np.diff(dark_count_form[2:7])
-                                                            sequence = (dark_count_form[2] > dark_count_form[3]) + (dark_count_form[3] > dark_count_form[4]) + (dark_count_form[4] > dark_count_form[5]) + (dark_count_form[5] > dark_count_form[6])
-                                                            cut_7 = (np.sum(sequence) < 2)
-                                                            #cut_7 = (np.sum(np.diff(np.sign(difrl)) != 0) < 2)
-                                                            cut_8 = np.prod(dark_count_form[3:5] > n_noise_factor[adc])
-                                                            cut_9 = (np.sum(dark_count_form) > -1.5e3)
-                                                       combo_cut_2 = cut_4*cut_5*cut_6*cut_7*cut_8*cut_9
-                                                       del cut_4, cut_5, cut_6, cut_7, cut_8, cut_9#, difrl
-                                                       #print('aaa')
-                                                       if combo_cut_2==1:                                                  
-                                                            dark_count_int = (dark_count_form).astype(np.int16)
-                                                            pedestal_int = (pedestal(offbeam_wvfm_v4[event, adc, channel, :])).astype(np.int16)
-                                                            del dark_count_form
-                                                            #try:
-                                                            next_wvfm_idx = np.where(dark_count_wvfm[:,adc,adc_channel, 63] == 0)[0][0]
-                                                            ped_check1 = (np.abs(np.mean(pedestal_int)) < 20)
-                                                            ped_check2 = (np.min(pedestal_int) > -100)
-                                                            ped_check3 = (np.max(pedestal_int) < 100)
-                                                            if (ped_check1*ped_check2*ped_check3) == 1:
-                                                                 dark_count_wvfm[next_wvfm_idx,adc,adc_channel, 60:(60+Window)] += dark_count_int
-                                                                 dark_count_wvfm[next_wvfm_idx,adc,adc_channel, 0:50] += pedestal_int
-                                                                 count[adc, adc_channel] += 1
-                                                            del next_wvfm_idx
-                                                            del dark_count_int
+     # 1. Every candidate hit across the whole (event, adc, channel) space, one call
+     evt_i, adc_i, ch_i, tick_i = np.where(first_bins)
+     hit_value = tick_i + 20  # undo the [..., 20:] offset applied before peak_finder
 
-                                                       else: 
-                                                            del dark_count_form
-                                                       #except: 
-                                                  if (cut_1+tester) == 0:
-                                                       print(f'ADC {adc}, Channel {channel}, Event {event}')
-                                                       tester += 1
-                                        #else:
-                                        #     if count[adc, adc_channel] < 500:
-                                        #          dark_count_form = offbeam_wvfm_v4[event, adc, channel, 0:25]
-                                        #          dark_count_int = (dark_count_form / gain_array[adc, channel]).astype(np.int16)
-                                        #          del dark_count_form
-                                        #          next_wvfm_idx = np.where(dark_count_wvfm[:,adc,adc_channel, 63] == 0)[0][0]
-                                        #          dark_count_wvfm[next_wvfm_idx,adc,adc_channel, 60:85] += dark_count_int
-                                        #          del dark_count_int
-                                        #          del next_wvfm_idx
-                                        #          count[adc, adc_channel] += 1
-                                        del hit_idx
-                                   del adc_channel
-                                   del tester
-                         del offbeam_wvfm_v4
-                         del first_bins   
+     # cut_3, plus the Channelnum limit the original `range(Channelnum)` enforced
+     keep = (hit_value <= last_tick) & (ch_i < Channelnum)
+     evt_i, adc_i, ch_i, hit_value = evt_i[keep], adc_i[keep], ch_i[keep], hit_value[keep]
+
+     if len(evt_i) > 0:
+          # 2. Extract every candidate's window in one fancy-index call
+          window_offsets = np.arange(-3, Window - 3)
+          sample_idx = hit_value[:, None] + window_offsets[None, :]
+          forms = offbeam_wvfm_v4[evt_i[:, None], adc_i[:, None], ch_i[:, None], sample_idx]
+
+          # 3. cuts 4-9, vectorized across every candidate at once
+          is_mod123 = adc_i >= 2
+          limit = np.where(is_mod123, 80, 100)
+          cut_4 = np.max(forms[:, -6:], axis=1) < limit
+          cut_5 = forms[:, 0] < limit
+          cut_6 = np.min(forms, axis=1) > -limit
+          rises = ((forms[:, 2] > forms[:, 3]).astype(np.int8)
+                 + (forms[:, 3] > forms[:, 4]).astype(np.int8)
+                 + (forms[:, 4] > forms[:, 5]).astype(np.int8)
+                 + (forms[:, 5] > forms[:, 6]).astype(np.int8))
+          cut_7 = rises < 2
+          cut_8 = np.all(forms[:, 3:5] > n_noise_factor[adc_i][:, None], axis=1)
+          sums = np.sum(forms, axis=1)
+          cut_9 = np.where(is_mod123, (sums < 2.5e4) & (sums > -1.5e3), sums > -1.5e3)
+          passed_49 = cut_4 & cut_5 & cut_6 & cut_7 & cut_8 & cut_9
+
+          # 4. Pedestal check -- only for candidates that already passed cuts 4-9
+          would_be_accepted = np.zeros(len(evt_i), dtype=bool)
+          idx_49 = np.where(passed_49)[0]
+          ped_regions = np.empty((0, 50), dtype=np.int16)
+          if len(idx_49) > 0:
+               traces_49 = offbeam_wvfm_v4[evt_i[idx_49], adc_i[idx_49], ch_i[idx_49], :]
+               ped_regions = pedestal_batch(traces_49).astype(np.int16)
+               ped_ok = ((np.abs(np.mean(ped_regions, axis=1)) < 20)
+                        & (np.min(ped_regions, axis=1) > -100)
+                        & (np.max(ped_regions, axis=1) < 100))
+               would_be_accepted[idx_49] = ped_ok
+
+          # 5. Apply the per-channel MaxPulsenum cap in the SAME traversal order the
+          #    original loop used (adc outer, channel next, event next, tick innermost) --
+          #    reproduces exactly which hits get kept once a channel fills up.
+          adc_channel_i = np.asarray(sipm_channels)[ch_i]
+          group_id = adc_i.astype(np.int64) * 64 + adc_channel_i.astype(np.int64)
+          order = np.lexsort((hit_value, evt_i, ch_i, adc_i))
+
+          g_sorted = group_id[order]
+          acc_sorted = would_be_accepted[order]
+          df = pd.DataFrame({'group': g_sorted, 'accepted': acc_sorted})
+          cum_before = (df.groupby('group')['accepted'].cumsum() - df['accepted']).to_numpy()
+
+          final_mask_sorted = acc_sorted & (cum_before < MaxPulsenum)
+          final_positions = order[final_mask_sorted]
+          final_slots = cum_before[final_mask_sorted].astype(np.int64)
+          final_adc = adc_i[final_positions]
+          final_adc_channel = adc_channel_i[final_positions]
+
+          # 6. Write the final, capped set of accepted hits into dark_count_wvfm
+          pos_to_49 = -np.ones(len(evt_i), dtype=np.int64)
+          pos_to_49[idx_49] = np.arange(len(idx_49))
+          ped_rows = pos_to_49[final_positions]
+
+          dark_count_wvfm[final_slots, final_adc, final_adc_channel, 60:(60 + Window)] += \
+               forms[final_positions].astype(np.int16)
+          dark_count_wvfm[final_slots, final_adc, final_adc_channel, 0:50] += \
+               ped_regions[ped_rows]
+
+          np.add.at(count, (final_adc, final_adc_channel), 1)
+
+     del offbeam_wvfm_v4
+     del first_bins
      print(count)
      del count
 
