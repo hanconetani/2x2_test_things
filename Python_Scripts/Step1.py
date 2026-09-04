@@ -128,19 +128,14 @@ def tag_dark_counts(FileList, ADCnum,Channelnum, MaxPulsenum, Voltage, Run, Wind
                      [52,53,54,55,56,57] + \
                      [58,59,60,61,62,63])
      print('aaa')
-    
-     #file_list = glob.glob("/global/cfs/cdirs/dune/www/data/2x2/nearline/flowed_light/data_bin004/*.FLOW.hdf5")
-     #file_list = glob.glob("/global/cfs/cdirs/dune/users/ajwhite/2x2_Data/2x2_Filtered/LRS_FLOW/mpd_run_hvramp_rctl_105_p1*")
-     #for file in file_list:
-     #start_value = 500 # for the radon injection run
-     start_value = 0
+
      for Nf in range(N_Files):
 
           file = file_list[Nf]
           file_num = 0
 
           print("File exists: ", file)
-          if file_num < N_Files: #508:
+          if file_num < N_Files:
                print('file number:', file_num)
                print(count)
                file_num += 1
@@ -149,120 +144,97 @@ def tag_dark_counts(FileList, ADCnum,Channelnum, MaxPulsenum, Voltage, Run, Wind
                     continue
                else:
                     with h5py.File(file, 'r') as h5:
-                         #print('bbb')
-                         #light_wvfms = h5['light/wvfm/data']['samples']
-                         #light_wvfms_rwm = np.max(light_wvfms[:,0,18,:], axis=-1)
-                         #offbeam_mask = np.where(light_wvfms_rwm < 1e4)[0]
-                         #offbeam_wvfm_v1 =  light_wvfms[offbeam_mask, :, :, :]
                          offbeam_wvfm_v1 =  h5['light/wvfm/data']['samples']
                          print(f"[MEM] after reading raw 'samples' field: {_rss_gb():.2f} GB | shape {offbeam_wvfm_v1.shape} dtype {offbeam_wvfm_v1.dtype}", flush=True)
-                         #print('a')
-                         #del light_wvfms_rwm
-                         #del light_wvfms
-                         #del offbeam_mask
                          offbeam_wvfm_v2 =  thd_correct(offbeam_wvfm_v1)
                          print(f"[MEM] after thd_correct: {_rss_gb():.2f} GB", flush=True)
-                         #print('b')
                          del offbeam_wvfm_v1
-                         #offbeam_wvfm_v3 = kill_weirdos(offbeam_wvfm_v2)
-                         #print('c')
-                         #del offbeam_wvfm_v2
-                         #del offbeam_wvfm_v1
-                         offbeam_wvfm_v4 =  offbeam_wvfm_v2[:, :, sipm_channels, :] #* gain_array[:, :, np.newaxis]
+                         offbeam_wvfm_v4 =  offbeam_wvfm_v2[:, :, sipm_channels, :]
                          print(f"[MEM] after slicing to sipm_channels: {_rss_gb():.2f} GB | shape {offbeam_wvfm_v4.shape}", flush=True)
-                         #offbeam_wvfm_v4 =  offbeam_wvfm_v3[:, :, sipm_channels, :] #* gain_array[:, :, np.newaxis]
-                         #print('d')
-                         #del offbeam_wvfm_v3
                          del offbeam_wvfm_v2
-                         #n_noise_factor=np.array([130, 130, 210, 210, 210, 210, 210, 210]) # Decommissioning values
                          n_noise_factor=np.array([110, 110, 190, 190, 190, 190, 190, 190]) # June 2025 values
-                         
+
                          first_bins = peak_finder(wvfm=offbeam_wvfm_v4[:, :, :, 20:], n_noise_factor=n_noise_factor, n_bins_rolled=1, n_sqrt_rt_factor=0, pe_weight=0, use_rising_edge=True)
-                         #print('Shape of first_bins:', np.shape(first_bins))
-                         #print(first_bins)
-                         #del noise_thresholds
 
-                         #print(np.shape(np.sum(np.sum(np.sum(first_bins, axis=-1), axis=-1), axis=-1)))
-                         #print(np.sum(np.sum(np.sum(first_bins, axis=-1), axis=-1), axis=-1))
-                         #per_event_hits = np.sum(np.sum(np.sum(first_bins, axis=-1), axis=-1), axis=-1)
-                         #print(np.sum(per_event_hits > 0))
+                         # --- Vectorized hit-selection: runs once per file, HERE inside the
+                         # loop, so results accumulate into dark_count_wvfm/count across every
+                         # file in the manifest, not just the last one processed. ---
+                         last_tick = offbeam_wvfm_v4.shape[-1] - (Window - 2)
 
-     last_tick = offbeam_wvfm_v4.shape[-1] - (Window - 2)
+                         evt_i, adc_i, ch_i, tick_i = np.where(first_bins)
+                         hit_value = tick_i + 20
 
-     # 1. Every candidate hit across the whole (event, adc, channel) space, one call
-     evt_i, adc_i, ch_i, tick_i = np.where(first_bins)
-     hit_value = tick_i + 20  # undo the [..., 20:] offset applied before peak_finder
+                         keep = (hit_value <= last_tick) & (ch_i < Channelnum)
+                         evt_i, adc_i, ch_i, hit_value = evt_i[keep], adc_i[keep], ch_i[keep], hit_value[keep]
 
-     # cut_3, plus the Channelnum limit the original `range(Channelnum)` enforced
-     keep = (hit_value <= last_tick) & (ch_i < Channelnum)
-     evt_i, adc_i, ch_i, hit_value = evt_i[keep], adc_i[keep], ch_i[keep], hit_value[keep]
+                         if len(evt_i) > 0:
+                              window_offsets = np.arange(-3, Window - 3)
+                              sample_idx = hit_value[:, None] + window_offsets[None, :]
+                              forms = offbeam_wvfm_v4[evt_i[:, None], adc_i[:, None], ch_i[:, None], sample_idx]
 
-     if len(evt_i) > 0:
-          # 2. Extract every candidate's window in one fancy-index call
-          window_offsets = np.arange(-3, Window - 3)
-          sample_idx = hit_value[:, None] + window_offsets[None, :]
-          forms = offbeam_wvfm_v4[evt_i[:, None], adc_i[:, None], ch_i[:, None], sample_idx]
+                              is_mod123 = adc_i >= 2
+                              limit = np.where(is_mod123, 80, 100)
+                              cut_4 = np.max(forms[:, -6:], axis=1) < limit
+                              cut_5 = forms[:, 0] < limit
+                              cut_6 = np.min(forms, axis=1) > -limit
+                              rises = ((forms[:, 2] > forms[:, 3]).astype(np.int8)
+                                     + (forms[:, 3] > forms[:, 4]).astype(np.int8)
+                                     + (forms[:, 4] > forms[:, 5]).astype(np.int8)
+                                     + (forms[:, 5] > forms[:, 6]).astype(np.int8))
+                              cut_7 = rises < 2
+                              cut_8 = np.all(forms[:, 3:5] > n_noise_factor[adc_i][:, None], axis=1)
+                              sums = np.sum(forms, axis=1)
+                              cut_9 = np.where(is_mod123, (sums < 2.5e4) & (sums > -1.5e3), sums > -1.5e3)
+                              passed_49 = cut_4 & cut_5 & cut_6 & cut_7 & cut_8 & cut_9
 
-          # 3. cuts 4-9, vectorized across every candidate at once
-          is_mod123 = adc_i >= 2
-          limit = np.where(is_mod123, 80, 100)
-          cut_4 = np.max(forms[:, -6:], axis=1) < limit
-          cut_5 = forms[:, 0] < limit
-          cut_6 = np.min(forms, axis=1) > -limit
-          rises = ((forms[:, 2] > forms[:, 3]).astype(np.int8)
-                 + (forms[:, 3] > forms[:, 4]).astype(np.int8)
-                 + (forms[:, 4] > forms[:, 5]).astype(np.int8)
-                 + (forms[:, 5] > forms[:, 6]).astype(np.int8))
-          cut_7 = rises < 2
-          cut_8 = np.all(forms[:, 3:5] > n_noise_factor[adc_i][:, None], axis=1)
-          sums = np.sum(forms, axis=1)
-          cut_9 = np.where(is_mod123, (sums < 2.5e4) & (sums > -1.5e3), sums > -1.5e3)
-          passed_49 = cut_4 & cut_5 & cut_6 & cut_7 & cut_8 & cut_9
+                              would_be_accepted = np.zeros(len(evt_i), dtype=bool)
+                              idx_49 = np.where(passed_49)[0]
+                              ped_regions = np.empty((0, 50), dtype=np.int16)
+                              if len(idx_49) > 0:
+                                   traces_49 = offbeam_wvfm_v4[evt_i[idx_49], adc_i[idx_49], ch_i[idx_49], :]
+                                   ped_regions = pedestal_batch(traces_49).astype(np.int16)
+                                   ped_ok = ((np.abs(np.mean(ped_regions, axis=1)) < 20)
+                                            & (np.min(ped_regions, axis=1) > -100)
+                                            & (np.max(ped_regions, axis=1) < 100))
+                                   would_be_accepted[idx_49] = ped_ok
 
-          # 4. Pedestal check -- only for candidates that already passed cuts 4-9
-          would_be_accepted = np.zeros(len(evt_i), dtype=bool)
-          idx_49 = np.where(passed_49)[0]
-          ped_regions = np.empty((0, 50), dtype=np.int16)
-          if len(idx_49) > 0:
-               traces_49 = offbeam_wvfm_v4[evt_i[idx_49], adc_i[idx_49], ch_i[idx_49], :]
-               ped_regions = pedestal_batch(traces_49).astype(np.int16)
-               ped_ok = ((np.abs(np.mean(ped_regions, axis=1)) < 20)
-                        & (np.min(ped_regions, axis=1) > -100)
-                        & (np.max(ped_regions, axis=1) < 100))
-               would_be_accepted[idx_49] = ped_ok
+                              # Cap enforcement: seed the running count from the PERSISTENT
+                              # `count` array (accumulated over all files processed so far in
+                              # this run), not a fresh per-file start at 0 -- otherwise every
+                              # file could independently fill each channel up to MaxPulsenum,
+                              # and separate files' hits would collide into the same
+                              # dark_count_wvfm slot and get summed together.
+                              adc_channel_i = np.asarray(sipm_channels)[ch_i]
+                              group_id = adc_i.astype(np.int64) * 64 + adc_channel_i.astype(np.int64)
+                              order = np.lexsort((hit_value, evt_i, ch_i, adc_i))
 
-          # 5. Apply the per-channel MaxPulsenum cap in the SAME traversal order the
-          #    original loop used (adc outer, channel next, event next, tick innermost) --
-          #    reproduces exactly which hits get kept once a channel fills up.
-          adc_channel_i = np.asarray(sipm_channels)[ch_i]
-          group_id = adc_i.astype(np.int64) * 64 + adc_channel_i.astype(np.int64)
-          order = np.lexsort((hit_value, evt_i, ch_i, adc_i))
+                              g_sorted = group_id[order]
+                              acc_sorted = would_be_accepted[order]
+                              df = pd.DataFrame({'group': g_sorted, 'accepted': acc_sorted})
+                              within_file_cum = (df.groupby('group')['accepted'].cumsum() - df['accepted']).to_numpy()
+                              starting_count = count.reshape(-1)[g_sorted]
+                              cum_before = starting_count + within_file_cum
 
-          g_sorted = group_id[order]
-          acc_sorted = would_be_accepted[order]
-          df = pd.DataFrame({'group': g_sorted, 'accepted': acc_sorted})
-          cum_before = (df.groupby('group')['accepted'].cumsum() - df['accepted']).to_numpy()
+                              final_mask_sorted = acc_sorted & (cum_before < MaxPulsenum)
+                              final_positions = order[final_mask_sorted]
+                              final_slots = cum_before[final_mask_sorted].astype(np.int64)
+                              final_adc = adc_i[final_positions]
+                              final_adc_channel = adc_channel_i[final_positions]
 
-          final_mask_sorted = acc_sorted & (cum_before < MaxPulsenum)
-          final_positions = order[final_mask_sorted]
-          final_slots = cum_before[final_mask_sorted].astype(np.int64)
-          final_adc = adc_i[final_positions]
-          final_adc_channel = adc_channel_i[final_positions]
+                              pos_to_49 = -np.ones(len(evt_i), dtype=np.int64)
+                              pos_to_49[idx_49] = np.arange(len(idx_49))
+                              ped_rows = pos_to_49[final_positions]
 
-          # 6. Write the final, capped set of accepted hits into dark_count_wvfm
-          pos_to_49 = -np.ones(len(evt_i), dtype=np.int64)
-          pos_to_49[idx_49] = np.arange(len(idx_49))
-          ped_rows = pos_to_49[final_positions]
+                              dark_count_wvfm[final_slots, final_adc, final_adc_channel, 60:(60 + Window)] += \
+                                   forms[final_positions].astype(np.int16)
+                              dark_count_wvfm[final_slots, final_adc, final_adc_channel, 0:50] += \
+                                   ped_regions[ped_rows]
 
-          dark_count_wvfm[final_slots, final_adc, final_adc_channel, 60:(60 + Window)] += \
-               forms[final_positions].astype(np.int16)
-          dark_count_wvfm[final_slots, final_adc, final_adc_channel, 0:50] += \
-               ped_regions[ped_rows]
+                              np.add.at(count, (final_adc, final_adc_channel), 1)
 
-          np.add.at(count, (final_adc, final_adc_channel), 1)
+                         del offbeam_wvfm_v4
+                         del first_bins
 
-     del offbeam_wvfm_v4
-     del first_bins
      print(count)
      del count
 
