@@ -177,11 +177,14 @@ def tag_dark_counts(FileList, ADCnum,Channelnum, MaxPulsenum, Voltage, Run, Wind
                               cut_4 = np.max(forms[:, -6:], axis=1) < limit
                               cut_5 = forms[:, 0] < limit
                               cut_6 = np.min(forms, axis=1) > -limit
-                              rises = ((forms[:, 2] > forms[:, 3]).astype(np.int8)
-                                     + (forms[:, 3] > forms[:, 4]).astype(np.int8)
-                                     + (forms[:, 4] > forms[:, 5]).astype(np.int8)
-                                     + (forms[:, 5] > forms[:, 6]).astype(np.int8))
+                              rises = ((forms[:, 2] > forms[:, 3])#.astype(np.int8)
+                                     + (forms[:, 3] > forms[:, 4])#.astype(np.int8)
+                                     + (forms[:, 4] > forms[:, 5])#.astype(np.int8)
+                                     + (forms[:, 5] > forms[:, 6])#.astype(np.int8)
+                                     )
                               cut_7 = rises < 2
+                              #sequence = (forms[2] > forms[3]) + (forms[3] > forms[4]) + (forms[4] > forms[5]) + (forms[5] > forms[6])
+                              #cut_7 = (np.sum(sequence) < 2)
                               cut_8 = np.all(forms[:, 3:5] > n_noise_factor[adc_i][:, None], axis=1)
                               sums = np.sum(forms, axis=1)
                               cut_9 = np.where(is_mod123, (sums < 2.5e4) & (sums > -1.5e3), sums > -1.5e3)

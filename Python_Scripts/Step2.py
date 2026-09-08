@@ -608,6 +608,7 @@ def main(file_list, output_file, gain_output, adc=None, bias_voltage=None, run=N
     }
 
     initial_guess = { 
+                48.0: [40, 100, 4.5e3, 4.5e3, 150, 160, 5.0e4, 3.5e4],
                 51.0: [40, 100, 4.5e3, 4.5e3, 150, 160, 5.0e4, 3.5e4],
                 51.5: [40, 100, 4.5e3, 4.5e3, 150, 160, 5.0e4, 3.5e4],
                 52.0: [40, 100, 4.5e3, 4.5e3, 150, 160, 5.0e4, 3.5e4],
@@ -687,5 +688,3 @@ if __name__=='__main__':
                         help='''int corresponding to number of ticks in signal window.''')
     args = parser.parse_args()
     main(**vars(args))
-
-  
