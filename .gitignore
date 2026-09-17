@@ -3,3 +3,9 @@ myenv.tar.gz
 mypipeline.tar.gz
 __pycache__/
 *.pyc
+job_logs/
+job_logs_live/
+job_logs_step2test/
+timing_step1_*.log
+timing_step2.log
+mypipeline.tar.gz*

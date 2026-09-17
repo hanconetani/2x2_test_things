@@ -14,6 +14,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 import yaml
 from scipy.signal import find_peaks
 from glob import glob
+from matplotlib.colors import LogNorm
 
 SAMPLE_WIDTH_NS = 16
 N_PHOTOELECTRONS = 2
@@ -451,6 +452,7 @@ def analyze_spe(file_path, output_file, initial_guess_v0=None, adc_num=None, win
                         axs[0].set_title(f"SPE Fit for ADC {adc}, Channel {ch}")
                         axs[0].set_xlabel("Integrated Charge [a.u.]")
                         axs[0].set_ylabel("Counts")
+                        axs[0].set_yscale("log")
                         axs[0].axvline(qspe_est, color='red',label=f"hist peak: {qspe_est}")
                         
                         for v in range(1, 4):
@@ -460,8 +462,13 @@ def analyze_spe(file_path, output_file, initial_guess_v0=None, adc_num=None, win
                         axs[0].grid(True)
 
                         # --- Second subplot: Overlaid waveforms ---
-                        for wf in wfs:  # optional: show only first 100
-                            axs[1].plot(wf, alpha=0.3, color='blue', rasterized=True)
+                        #for wf in wfs:  # shows all waveforms
+                        #for wf in wfs[::max(1, len(wfs)//100)]:    # optional: show only 100 (evenly spaced)
+                            #axs[1].plot(wf, alpha=0.3, color='blue', rasterized=True)
+                        #Halits plotting:
+                        wfs_x = np.tile(np.arange(wfs.shape[1]), wfs.shape[0])
+                        wfs_y = wfs.reshape(-1)
+                        axs[1].hist2d(wfs_x,wfs_y,bins=[200,200], norm=LogNorm(), rasterized=True)
                         axs[1].set_title(f"ADC {adc}, Channel {ch}: Dark Count Waveforms")
                         axs[1].set_xlabel("Sample")
                         axs[1].set_ylabel("Raw ADC Counts")
@@ -508,11 +515,16 @@ def analyze_spe(file_path, output_file, initial_guess_v0=None, adc_num=None, win
                         print(f"{type(e).__name__}")
                         fits_failed[adc] += 1
                         fig, axs = plt.subplots(2, 1, figsize=(10, 6),gridspec_kw={'height_ratios': [1, 1]})
-                        for wf in wfs:
-                            axs[0].plot(wf, alpha=0.3, color='blue', rasterized=True)
+                        #for wf in wfs: #Plots everything
+                        #for wf in wfs[::max(1, len(wfs)//100)]: #Only plots 100
+                            #axs[0].plot(wf, alpha=0.3, color='blue', rasterized=True)
+                        wfs_x = np.tile(np.arange(wfs.shape[1]), wfs.shape[0])
+                        wfs_y = wfs.reshape(-1)
+                        axs[1].hist2d(wfs_x,wfs_y,bins=[200,200], norm=LogNorm(), rasterized=True)
                         axs[0].set_title(f"ADC {adc}, Channel {ch}: Fit Failure on Dark Counts")
                         axs[0].set_xlabel("Sample")
                         axs[0].set_ylabel("Raw ADC Counts")
+                        #axs[0].set_yscale("log") #I am stupid... I am stupid
                         axs[0].grid(True)
                         try: 
                             data_min = np.sort(combo_integrals)[10]
