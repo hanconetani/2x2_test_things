@@ -153,6 +153,7 @@ def tag_dark_counts(FileList, ADCnum,Channelnum, MaxPulsenum, Voltage, Run, Wind
                          print(f"[MEM] after slicing to sipm_channels: {_rss_gb():.2f} GB | shape {offbeam_wvfm_v4.shape}", flush=True)
                          del offbeam_wvfm_v2
                          n_noise_factor=np.array([110, 110, 190, 190, 190, 190, 190, 190]) # June 2025 values
+                         #n_noise_factor=np.array([250, 250, 400, 400, 400, 400, 400, 400]) # September 2026 values
 
                          first_bins = peak_finder(wvfm=offbeam_wvfm_v4[:, :, :, 20:], n_noise_factor=n_noise_factor, n_bins_rolled=1, n_sqrt_rt_factor=0, pe_weight=0, use_rising_edge=True)
 
@@ -174,6 +175,9 @@ def tag_dark_counts(FileList, ADCnum,Channelnum, MaxPulsenum, Voltage, Run, Wind
 
                               is_mod123 = adc_i >= 2
                               limit = np.where(is_mod123, 80, 100)
+                              #updated limit and cut 9 for 20dB amplification on 9/11/2026 (100->200, 80->150)
+                              #limit = np.where(is_mod123, 150, 200)
+                              #limit = np.where(is_mod123, 90, 125)
                               cut_4 = np.max(forms[:, -6:], axis=1) < limit
                               cut_5 = forms[:, 0] < limit
                               cut_6 = np.min(forms, axis=1) > -limit
@@ -188,6 +192,8 @@ def tag_dark_counts(FileList, ADCnum,Channelnum, MaxPulsenum, Voltage, Run, Wind
                               cut_8 = np.all(forms[:, 3:5] > n_noise_factor[adc_i][:, None], axis=1)
                               sums = np.sum(forms, axis=1)
                               cut_9 = np.where(is_mod123, (sums < 2.5e4) & (sums > -1.5e3), sums > -1.5e3)
+                              #cut_9 = np.where(is_mod123, (sums < 2.5e5) & (sums > -1.5e3), sums > -1.5e3)
+                              #cut_9 = np.where(is_mod123, (sums < 5.0e4) & (sums > -1.5e3), sums > -1.5e3)
                               passed_49 = cut_4 & cut_5 & cut_6 & cut_7 & cut_8 & cut_9
 
                               would_be_accepted = np.zeros(len(evt_i), dtype=bool)
@@ -197,8 +203,13 @@ def tag_dark_counts(FileList, ADCnum,Channelnum, MaxPulsenum, Voltage, Run, Wind
                                    traces_49 = offbeam_wvfm_v4[evt_i[idx_49], adc_i[idx_49], ch_i[idx_49], :]
                                    ped_regions = pedestal_batch(traces_49).astype(np.int16)
                                    ped_ok = ((np.abs(np.mean(ped_regions, axis=1)) < 20)
+                                             #updated 100->200 for these as well on 9/11/26 at Angela's suggestion
                                             & (np.min(ped_regions, axis=1) > -100)
                                             & (np.max(ped_regions, axis=1) < 100))
+                                            #& (np.min(ped_regions, axis=1) > -200)
+                                            #& (np.max(ped_regions, axis=1) < 200))
+                                            #& (np.min(ped_regions, axis=1) > -125)
+                                            #& (np.max(ped_regions, axis=1) < 125))
                                    would_be_accepted[idx_49] = ped_ok
 
                               # Cap enforcement: seed the running count from the PERSISTENT

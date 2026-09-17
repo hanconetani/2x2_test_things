@@ -139,6 +139,8 @@ while IFS= read -r HDF5_PNFS_PATH || [ -n "$HDF5_PNFS_PATH" ]; do
   [ $STATUS -eq 0 ] || fail "Step1.py exited with status $STATUS on file ${INDEX} (${HDF5_PNFS_PATH}) -- see ${STEP1_TIMING_LOG} (status 137 = killed by SIGKILL, most likely OOM)"
   [ -s "$STEP1_OUT" ] || fail "step 1 did not produce ${STEP1_OUT} for file ${INDEX}"
 
+  stage_out "$STEP1_OUT" "$OUTPUT_DEST_PNFS" || echo "WARNING: could not stage out $STEP1_OUT" >&2
+
   STEP1_OUTPUTS+=("$STEP1_OUT")
   rm -f "$LOCAL_HDF5" "$FILE_LIST"
 done < "$LOCAL_MANIFEST"
